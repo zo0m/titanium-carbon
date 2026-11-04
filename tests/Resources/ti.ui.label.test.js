@@ -410,6 +410,107 @@ describe('Titanium.UI.Label', function () {
 		});
 	});
 
+	describe.ios('auto-size measurement', () => {
+		const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+		function expectSameSize(actual, expected, step) {
+			if (Math.abs(actual.width - expected.width) > 1 || Math.abs(actual.height - expected.height) > 1) {
+				should.fail(`${step}: label measured ${actual.width}x${actual.height}, new label measured ${expected.width}x${expected.height}`);
+			}
+		}
+
+		// A reused label must measure the same as a new label with the same properties after every change.
+		async function compareWithNewLabels(host, reused, properties, steps) {
+			const current = Object.assign({}, properties);
+			for (const [ step, changes, cleared = [] ] of steps) {
+				Object.assign(current, changes);
+				cleared.forEach(key => delete current[key]);
+				Object.keys(changes).forEach(key => {
+					reused[key] = changes[key];
+				});
+				await delay(100);
+
+				const fresh = Ti.UI.createLabel(current);
+				host.add(fresh);
+				await delay(100);
+				expectSameSize(reused.size, fresh.size, step);
+				host.remove(fresh);
+			}
+		}
+
+		function attributed(text, fontSize) {
+			return Ti.UI.createAttributedString({
+				text,
+				attributes: [ { type: Ti.UI.ATTRIBUTE_FONT, value: { fontSize }, range: [ 0, text.length ] } ]
+			});
+		}
+
+		it('tracks text and style changes', function (finish) {
+			this.slow(5000);
+			this.timeout(20000);
+
+			win = Ti.UI.createWindow({ layout: 'vertical' });
+			const properties = { text: 'Measured text', font: { fontSize: 17 } };
+			const label = Ti.UI.createLabel(properties);
+			win.add(label);
+			win.addEventListener('open', function listener() {
+				win.removeEventListener('open', listener);
+
+				compareWithNewLabels(win, label, properties, [
+					[ 'same text', { text: 'Measured text' } ],
+					[ 'longer text', { text: 'Measured text that is longer' } ],
+					[ 'multiple lines', { text: 'Line one\nA longer second line' } ],
+					[ 'bigger font', { font: { fontSize: 34 } } ],
+					[ 'bold font', { font: { fontSize: 34, fontWeight: 'bold' } } ],
+					[ 'smaller font', { font: { fontSize: 12 } } ],
+					[ 'empty text', { text: '' } ],
+					[ 'restored text', { text: 'Measured text' } ],
+					[ 'color only', { color: 'red' } ],
+					[ 'trailing space', { text: 'Measured text ' } ],
+					[ 'shadow', { shadowOffset: { x: 4, y: 0 }, shadowColor: 'black' } ],
+					[ 'padding', { padding: { left: 20, right: 30, top: 5, bottom: 15 } } ],
+					[ 'scaled font', { minimumFontSize: 8 } ],
+					[ 'alignment', { textAlign: Ti.UI.TEXT_ALIGNMENT_CENTER } ],
+					[ 'attributed text', { attributedString: attributed('Attributed', 40) }, [ 'text' ] ],
+					[ 'other attributed text', { attributedString: attributed('Attributed', 20) } ],
+					[ 'html', { html: '<b>Bold</b> text with <i>style</i>' }, [ 'attributedString' ] ],
+					[ 'plain text again', { text: 'Plain text', font: { fontSize: 12 } }, [ 'html' ] ],
+				]).then(finish, finish);
+			});
+			win.open();
+		});
+
+		it('tracks available width changes', function (finish) {
+			this.slow(5000);
+			this.timeout(20000);
+
+			const text = 'Text that is long enough to wrap onto several lines when the available width gets narrow';
+			win = Ti.UI.createWindow();
+			const host = Ti.UI.createView({ layout: 'vertical', width: 300, height: Ti.UI.SIZE, top: 0 });
+			const label = Ti.UI.createLabel({ text, font: { fontSize: 17 } });
+			host.add(label);
+			win.add(host);
+			win.addEventListener('open', function listener() {
+				win.removeEventListener('open', listener);
+
+				(async () => {
+					await delay(100);
+					for (const width of [ 120, 300, 80, 200 ]) {
+						host.width = width;
+						await delay(100);
+
+						const fresh = Ti.UI.createLabel({ text, font: { fontSize: 17 } });
+						host.add(fresh);
+						await delay(100);
+						expectSameSize(label.size, fresh.size, `width ${width}`);
+						host.remove(fresh);
+					}
+				})().then(finish, finish);
+			});
+			win.open();
+		});
+	});
+
 	it('animate font color', function (finish) {
 		this.slow(2000);
 		this.timeout(5000);

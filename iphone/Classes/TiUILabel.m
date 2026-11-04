@@ -43,6 +43,7 @@
 {
   RELEASE_TO_NIL(label);
   RELEASE_TO_NIL(wrapperView);
+  RELEASE_TO_NIL(measuredText);
   [super dealloc];
 }
 
@@ -64,7 +65,14 @@
     // the string having trailing spaces when given size parameter width is equal to the expected return width, so we adjust it here.
     maxSize.width += 0.00001;
   }
-  CGSize returnVal = [value size];
+  // -[NSAttributedString size] is unconstrained, so it depends only on the string and its attributes,
+  // but auto-size layout asks for it many times per pass. Only measure when those have changed.
+  if (value != measuredText && ![value isEqual:measuredText]) {
+    [measuredText release];
+    measuredText = [value copy];
+    measuredTextSize = [value size];
+  }
+  CGSize returnVal = measuredTextSize;
   CGSize size = CGSizeMake(ceilf(returnVal.width), ceilf(returnVal.height));
   if (shadowOffset.width > 0) {
     // if we have a shadow and auto, we need to adjust to prevent
