@@ -41,7 +41,7 @@ A synthetic app rendered labels through 219 steps and saved each view as a PNG, 
 
 Off-screen labels were saved individually, because a window capture is clipped to the screen.
 
-| Comparison | Environment | Images | Geometry differences | Pixel differences |
+| Comparison | Environment | Images | Geometry differences (steps) | Pixel differences (images) |
 |---|---|---:|---:|---:|
 | Unmodified vs unmodified | iOS 26.2 simulator | 407 | 0 | 0 |
 | Unmodified vs patched, 2 pairs | iOS 26.2 simulator | 407 | 0 | 0 |
@@ -73,7 +73,7 @@ On the simulators, `simctl ui content_size` changed the category while the app r
 
 These tests check rendering behaviour, so they pass with or without the cache. They poll until the reused and new labels agree on two reads in a row, with a 3 second limit, because `postlayout` does not fire when a size stays the same.
 
-`tests/native/ios/LabelMeasurementTests.m` checks the optimization itself. It counts `-[NSAttributedString size]` calls around `sizeForFont:`, so it fails if a sync drops the cache or weakens invalidation. Run it with `tests/native/ios/run.sh`, which needs XcodeGen. No CI workflow runs it.
+`tests/native/ios/LabelMeasurementTests.m` checks the optimization itself. It counts `-[NSAttributedString size]` calls around `sizeForFont:`, so it fails if a sync drops the cache or weakens invalidation. Run it with `tests/native/ios/run.sh`, which needs XcodeGen. No CI workflow runs it, so run it when syncing with upstream.
 
 | Build | Label suite, iOS 26.2 simulator, `en-US` |
 |---|---|
@@ -122,6 +122,8 @@ The repo's `build/lib/test/test.js` runs `killall Simulator`, which can disrupt 
 
 ## Benchmarks
 
+These ran before dead work was removed from `sizeForFont:`.
+
 Device: iPad7,5 (A10), iPadOS 17.7.11. `ti build -T device -D test`, so `iphone/Classes` used the Xcode Debug configuration. Builds alternated with a fresh process per sample and swapped order each cycle. Values are median (range), in ms.
 
 Stall figures come from late ticks of a 16 ms JS timer, counting only gaps over 40 ms. They show responsiveness, not CPU cost, and the cutoff affects percentages when stalls are short. In the 14.0.0 label-change row, 101 of 125 patched samples are at or below 60 ms and 12 are 0, while no unmodified sample is at or below 60 ms. Treat -73.5% as approximate. Elapsed figures are time between two points in the app. Do not compare the two tables: they measure different SDK versions and workloads.
@@ -155,6 +157,7 @@ Map loading is not attributed to the patch: label measurement is 0.1% of its sam
 
 ## Outstanding
 
+- The device and integration runs recorded here predate the removal of dead work from `sizeForFont:`. The final code has not run on a device.
 - **13.4 backport:** FireCloud currently builds with 13.4.0, and this branch targets 14.0.0, so FireCloud does not get this optimization from it. Using it there needs a separate backport and its own validation.
 - FireCloud has not been measured on 14.0.0. Its build fails there in the Hyperloop 8.0.1 generator (`unknown encoding [MapView]`), which is a separate compatibility issue.
 - No Ad Hoc or App Store build has been measured, and benchmarks ran on only one device.

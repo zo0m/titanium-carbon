@@ -15,7 +15,7 @@ The design and benchmark record is [iOS label text measurement](../ios-label-tex
 | R1 | External font state | Partially confirmed: the doc claim was too strong; stale layout not substantiated | Doc corrected, no code change |
 | R2 | Off-main race | Not substantiated as reachable | No code change, no assertion |
 | R3 | Fixed relayout delays | Partially confirmed | Replaced with bounded polling |
-| R4 | Loss of the optimization goes unnoticed | Partially confirmed | Native test added, not in CI |
+| R4 | Loss of the optimization goes unnoticed | Partially confirmed | Native test added, passes through `run.sh`, not in CI |
 | R5 | Equality and memory overhead | Not substantiated | Design kept |
 | R6 | Broader layout memoization | Deferred: "makes this cache unnecessary" not supported | No change, possible separate spike |
 | R7 | Dead work in `sizeForFont:` | Confirmed, predates this cache | Removed |
@@ -106,18 +106,22 @@ Each finding starts with the original, unverified claim.
 
 **Fix.** `LabelMeasurementTests.m` swizzles `-[NSAttributedString size]` and counts calls around `sizeForFont:`. There are no production changes.
 
-| `TiUILabel.m` variant | XCTest failures |
-|---|---|
-| Final (iOS 26.2 and 18.1) | 0 |
-| Cache removed | 6 |
-| Compares only the string | 16 |
-| Never invalidates | 22 |
+The test runs through `tests/native/ios/run.sh` with the existing `SceneTests`, using XcodeGen 2.46.0. The binary links CoreText.
+
+| `TiUILabel.m` variant | Hosted, iOS 26.2 (21 tests) | Hosted, iOS 18.1 (21 tests) | No app host, iOS 26.2: assertion failures |
+|---|---|---|---|
+| Final | 21 passed | 21 passed | 0 |
+| Cache removed | 19 passed, both label tests failed | Not run | 6 |
+| Compares only the string | 19 passed, both label tests failed | Not run | 16 |
+| Never invalidates | Not run | Not run | 22 |
+
+`run.sh` itself ran the final code on iOS 26.2. The other hosted runs reused the project and build it generated, with `xcodebuild test`. The broken variants only swapped the `TiUILabel.m` file reference in that generated project.
 
 **Remaining masks in the JS tests.** `ceilf` and even rounding hide differences under about 2 pt. `MAX(sizeThatFits, cached)` hides a stale width that is too small. The parent clamp hides a stale width that is too large. The native test's counts catch invalidation failures these would hide.
 
 **Limitations.**
 
-- The test was built with `clang` and run without an app host. **`project.yml` and `run.sh` were not run**, because XcodeGen isn't installed, so the hosted `SceneTests` target with these sources is unverified.
+- `run.sh` has not run from a clean clone, or with Bold Text enabled on the simulator.
 - No workflow runs it, so a sync that drops the cache stays green in CI unless someone runs it. CI workflows were out of scope.
 
 ### R5: Equality and memory overhead
@@ -141,7 +145,7 @@ Real labels in a hosted run made 5,756 calls: 4,598 pointer hits, 1,080 `isEqual
 
 **Disposition.** Design kept. A dirty flag would have to cover at least 12 setters plus the public `-label` accessor, and several of those setters don't notify layout. Stale results would be silent, and it would save about 1% of samples in that profile.
 
-**Limitations.** Timing is from a simulator, not a device. The memory check covers the copy itself, not whole-app memory. HTML strings weren't in the no-host probe, though hosted HTML labels did hit by pointer. The workloads may not match real apps.
+**Limitations.** The probe table's output was not saved, only its source. Timing is from a simulator, not a device. The memory check covers the copy itself, not whole-app memory. HTML strings weren't in the no-host probe, though hosted HTML labels did hit by pointer. The workloads may not match real apps.
 
 ### R6: Broader layout memoization
 
