@@ -19,6 +19,8 @@
   CGRect initialLabelFrame;
   CGFloat minFontSize;
   NSString *originalText;
+  NSAttributedString *measuredText;
+  CGSize measuredTextSize;
 }
 
 @property (nonatomic, getter=isHighlighted) BOOL highlighted; // default is NO

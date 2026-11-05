@@ -45,17 +45,21 @@ targets:
       - "${TITANIUM_SDK_ROOT}/iphone/Classes/TiAppiOSUserNotificationActionProxy.m"
       - "${TITANIUM_SDK_ROOT}/iphone/Classes/TiAppiOSUserNotificationCategoryProxy.m"
       - "${TITANIUM_SDK_ROOT}/iphone/Classes/TiAppiOSActivityAttributesProxy.m"
+      - "${TITANIUM_SDK_ROOT}/tests/native/ios/LabelMeasurementTests.m"
+      - "${TITANIUM_SDK_ROOT}/iphone/Classes/TiUILabel.m"
+      - "${TITANIUM_SDK_ROOT}/iphone/Classes/TiUILabelProxy.m"
 
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
-        GCC_PREPROCESSOR_DEFINITIONS: ["$(inherited)", USE_TI_APPIOS=1, USE_TI_FETCH=1, USE_TI_SILENTPUSH=1]
+        GCC_PREPROCESSOR_DEFINITIONS: ["$(inherited)", USE_TI_APPIOS=1, USE_TI_FETCH=1, USE_TI_SILENTPUSH=1, USE_TI_UILABEL=1]
         HEADER_SEARCH_PATHS: ["$(inherited)", "${TITANIUM_SDK_ROOT}/iphone/Classes"]
         TEST_HOST: $(BUILT_PRODUCTS_DIR)/SceneTestHost.app/SceneTestHost
         BUNDLE_LOADER: $(TEST_HOST)
     dependencies:
       - target: SceneTestHost
       - target: TitaniumKit/TitaniumKit
+      - sdk: CoreText.framework
 schemes:
   SceneTests:
     build:

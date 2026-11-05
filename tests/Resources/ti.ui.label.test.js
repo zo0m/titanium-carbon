@@ -410,6 +410,219 @@ describe('Titanium.UI.Label', function () {
 		});
 	});
 
+	describe.ios('auto-size measurement', () => {
+		// Label.size reads the current bounds without forcing layout, and a relayout that leaves the bounds
+		// unchanged fires no postlayout. So poll until the reused label agrees with a new label.
+		const POLL_INTERVAL = 60;
+		const POLL_DEADLINE = 3000;
+
+		// Outlasts a deadline on every poll, so a slow step fails with its own message and no poll outlives its test.
+		const timeoutFor = pollCount => (pollCount + 1) * (POLL_DEADLINE + 2 * POLL_INTERVAL);
+
+		const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+		// Labels round their auto sizes to even integers (verifyWidth:, verifyHeight:), so sizes compare exactly.
+		const sameSize = (a, b) => a.width === b.width && a.height === b.height;
+		const sizeText = size => `${size.width}x${size.height}`;
+
+		function openWindow(w) {
+			return new Promise(resolve => {
+				w.addEventListener('open', function listener() {
+					w.removeEventListener('open', listener);
+					resolve();
+				});
+				w.open();
+			});
+		}
+
+		// A new label reads 0x0 until its first layout, so it cannot match early. The reused label can still hold
+		// its old bounds, which is why both labels must agree, unchanged, on two consecutive reads.
+		async function compareWithNewLabel(host, reused, properties, step) {
+			const fresh = Ti.UI.createLabel(properties);
+			host.add(fresh);
+
+			const deadline = Date.now() + POLL_DEADLINE;
+			let agreed = null;
+			for (;;) {
+				const actual = reused.size;
+				const expected = fresh.size;
+				const agree = sameSize(actual, expected);
+				if (agree && agreed && sameSize(actual, agreed)) {
+					host.remove(fresh);
+					return actual;
+				}
+				// A stall can pass the deadline before the first agreeing read, so that read gets one confirmation.
+				if (Date.now() >= deadline && (!agree || agreed)) {
+					throw new Error(`${step}: label measured ${sizeText(actual)}, new label measured ${sizeText(expected)} after ${POLL_DEADLINE} ms`);
+				}
+				agreed = agree ? actual : null;
+				await delay(POLL_INTERVAL);
+			}
+		}
+
+		// Agreeing with a new label proves little if the old bounds were also the right answer.
+		function expectResize(previous, measured, step, resizes = true) {
+			if (sameSize(previous, measured) === resizes) {
+				throw new Error(`${step}: size went from ${sizeText(previous)} to ${sizeText(measured)}, expected ${resizes ? 'a new size' : 'no change'}`);
+			}
+		}
+
+		// A reused label must measure the same as a new label with the same properties after every change.
+		async function compareWithNewLabels(host, reused, properties, steps) {
+			const current = Object.assign({}, properties);
+			let previous = await compareWithNewLabel(host, reused, current, 'initial');
+			for (const [ step, changes, { cleared = [], resizes } = {} ] of steps) {
+				Object.assign(current, changes);
+				cleared.forEach(key => delete current[key]);
+				Object.keys(changes).forEach(key => {
+					reused[key] = changes[key];
+				});
+
+				const measured = await compareWithNewLabel(host, reused, current, step);
+				expectResize(previous, measured, step, resizes);
+				previous = measured;
+			}
+		}
+
+		function attributed(text, fontSize) {
+			return Ti.UI.createAttributedString({
+				text,
+				attributes: [ { type: Ti.UI.ATTRIBUTE_FONT, value: { fontSize }, range: [ 0, text.length ] } ]
+			});
+		}
+
+		it('tracks text and style changes', async function () {
+			const steps = [
+				[ 'same text', { text: 'Measured text' }, { resizes: false } ],
+				[ 'longer text', { text: 'Measured text that is longer' } ],
+				[ 'multiple lines', { text: 'Line one\nA longer second line' } ],
+				[ 'bigger font', { font: { fontSize: 34 } } ],
+				[ 'bold font', { font: { fontSize: 34, fontWeight: 'bold' } } ],
+				[ 'smaller font', { font: { fontSize: 12 } } ],
+				[ 'empty text', { text: '' } ],
+				[ 'restored text', { text: 'Measured text' } ],
+				[ 'color only', { color: 'red' }, { resizes: false } ],
+				[ 'trailing space', { text: 'Measured text ' } ],
+				[ 'shadow', { shadowOffset: { x: 4, y: 0 }, shadowColor: 'black' } ],
+				[ 'padding', { padding: { left: 20, right: 30, top: 5, bottom: 15 } } ],
+				[ 'scaled font', { minimumFontSize: 8 }, { resizes: false } ],
+				[ 'alignment', { textAlign: Ti.UI.TEXT_ALIGNMENT_CENTER }, { resizes: false } ],
+				[ 'attributed text', { attributedString: attributed('Attributed', 40) }, { cleared: [ 'text' ] } ],
+				[ 'other attributed text', { attributedString: attributed('Attributed', 20) } ],
+				[ 'html', { html: '<b>Bold</b> text with <i>style</i>' }, { cleared: [ 'attributedString' ] } ],
+				[ 'plain text again', { text: 'Plain text', font: { fontSize: 12 } }, { cleared: [ 'html' ] } ],
+			];
+			this.slow(5000);
+			this.timeout(timeoutFor(steps.length + 1));
+
+			win = Ti.UI.createWindow({ layout: 'vertical' });
+			const properties = { text: 'Measured text', font: { fontSize: 17 } };
+			const label = Ti.UI.createLabel(properties);
+			win.add(label);
+			await openWindow(win);
+
+			await compareWithNewLabels(win, label, properties, steps);
+		});
+
+		it('tracks text style fonts', async function () {
+			const steps = [
+				[ 'same text style', { font: { textStyle: Ti.UI.TEXT_STYLE_BODY } }, { resizes: false } ],
+				[ 'large title', { font: { textStyle: Ti.UI.TEXT_STYLE_LARGE_TITLE } } ],
+				[ 'text under text style', { text: 'Measured text that is longer' } ],
+				[ 'caption', { font: { textStyle: Ti.UI.TEXT_STYLE_CAPTION2 } } ],
+				[ 'scaled family', { font: { textStyle: Ti.UI.TEXT_STYLE_BODY, fontFamily: 'Georgia', fontSize: 30 } } ],
+				[ 'other scaled family size', { font: { textStyle: Ti.UI.TEXT_STYLE_BODY, fontFamily: 'Georgia', fontSize: 12 } } ],
+				[ 'fixed size', { font: { fontSize: 40 } } ],
+				[ 'text style again', { font: { textStyle: Ti.UI.TEXT_STYLE_HEADLINE } } ],
+			];
+			this.slow(5000);
+			this.timeout(timeoutFor(steps.length + 1));
+
+			win = Ti.UI.createWindow({ layout: 'vertical' });
+			const properties = { text: 'Measured text', font: { textStyle: Ti.UI.TEXT_STYLE_BODY } };
+			const label = Ti.UI.createLabel(properties);
+			win.add(label);
+			await openWindow(win);
+
+			await compareWithNewLabels(win, label, properties, steps);
+		});
+
+		it('tracks wrapped and padded text updates', async function () {
+			const longText = 'Text that is long enough to wrap onto several lines inside of this narrow parent view';
+			const steps = [
+				[ 'wrapped', { text: longText } ],
+				[ 'short again', { text: 'Short' } ],
+				[ 'padded', { padding: { left: 20, right: 30, top: 5, bottom: 15 } } ],
+				[ 'wrapped and padded', { text: longText } ],
+				[ 'other padding', { padding: { left: 4, right: 4, top: 20, bottom: 2 } } ],
+				[ 'wrapped with bigger font', { font: { fontSize: 28 } } ],
+				[ 'wrapped attributed text', { attributedString: attributed(longText, 22) }, { cleared: [ 'text' ] } ],
+				[ 'short attributed text', { attributedString: attributed('Short', 22) } ],
+				[ 'wrapped html', { html: `<b>Bold</b> ${longText}` }, { cleared: [ 'attributedString' ] } ],
+				[ 'short html', { html: '<b>Bold</b>' } ],
+			];
+			this.slow(5000);
+			this.timeout(timeoutFor(steps.length + 1));
+
+			win = Ti.UI.createWindow();
+			const host = Ti.UI.createView({ layout: 'vertical', width: 200, height: Ti.UI.SIZE, top: 0 });
+			const properties = { text: 'Short', font: { fontSize: 17 } };
+			const label = Ti.UI.createLabel(properties);
+			host.add(label);
+			win.add(host);
+			await openWindow(win);
+
+			await compareWithNewLabels(host, label, properties, steps);
+		});
+
+		it('tracks attribute changes with the same string', async function () {
+			const text = 'Same string';
+			const steps = [
+				[ 'smaller attributed font', { attributedString: attributed(text, 14) } ],
+				[ 'attributed kerning', { attributedString: Ti.UI.createAttributedString({
+					text,
+					attributes: [ { type: Ti.UI.ATTRIBUTE_KERN, value: 20, range: [ 0, text.length ] } ]
+				}) } ],
+				[ 'no attributed kerning', { attributedString: attributed(text, 14) } ],
+				[ 'large html', { html: `<span style="font-size: 60px">${text}</span>` }, { cleared: [ 'attributedString' ] } ],
+				[ 'small html', { html: `<span style="font-size: 12px">${text}</span>` } ],
+			];
+			this.slow(5000);
+			this.timeout(timeoutFor(steps.length + 1));
+
+			win = Ti.UI.createWindow({ layout: 'vertical' });
+			const properties = { attributedString: attributed(text, 40) };
+			const label = Ti.UI.createLabel(properties);
+			win.add(label);
+			await openWindow(win);
+
+			await compareWithNewLabels(win, label, properties, steps);
+		});
+
+		it('tracks available width changes', async function () {
+			const widths = [ 120, 300, 80, 200 ];
+			this.slow(5000);
+			this.timeout(timeoutFor(widths.length + 1));
+
+			const text = 'Text that is long enough to wrap onto several lines when the available width gets narrow';
+			const properties = { text, font: { fontSize: 17 } };
+			win = Ti.UI.createWindow();
+			const host = Ti.UI.createView({ layout: 'vertical', width: 300, height: Ti.UI.SIZE, top: 0 });
+			const label = Ti.UI.createLabel(properties);
+			host.add(label);
+			win.add(host);
+			await openWindow(win);
+
+			let previous = await compareWithNewLabel(host, label, properties, 'initial');
+			for (const width of widths) {
+				const step = `width ${width}`;
+				host.width = width;
+				const measured = await compareWithNewLabel(host, label, properties, step);
+				expectResize(previous, measured, step);
+				previous = measured;
+			}
+		});
+	});
+
 	it('animate font color', function (finish) {
 		this.slow(2000);
 		this.timeout(5000);
