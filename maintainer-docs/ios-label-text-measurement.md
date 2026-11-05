@@ -6,7 +6,7 @@
 
 Auto-sized layout asks each label for its content width many times per pass, because `TiViewProxy` recurses through nested `Ti.UI.SIZE` parents. Every request called `-[NSAttributedString size]`, which runs CoreText text measurement. In one Time Profiler trace per workload in FireCloud (SDK 13.4.0, iPad7,5), `sizeForFont:` was 43.5% of main-thread samples opening an inspection form, and 23.8% opening a dashboard.
 
-`-[NSAttributedString size]` takes no width, so the repeated calls for an unchanged label return the same result.
+`-[NSAttributedString size]` takes no width, so repeated calls for an unchanged attributed string returned the same result in every comparison recorded here.
 
 ## Implementation and invalidation
 
@@ -16,12 +16,12 @@ The method compares `[label attributedText]` with the stored copy and re-measure
 - **Width:** not part of the cached value. The method's width argument never affected `-[NSAttributedString size]`. `sizeThatFits:`, which does depend on width, is still called every time.
 - **Line count and font scaling:** `numberOfLines`, `minimumFontSize` and `adjustsFontSizeToFitWidth` do not affect an unconstrained `size`, before or after this change.
 - **Shadow and padding:** read live, outside the cache.
-- **Threading:** the cache is not synchronized, so it relies on layout running on the main thread. No off-main path was found, and the self-check below counted none.
+- **Threading:** the cache is not synchronized, so it relies on layout running on the main thread. On iOS, Kroll JS and the layout queue both run on the main run loop. No supported off-main path was found in the code that was traced, and the self-checks counted none, but nothing enforces this at runtime. See [R2](./reviews/ios-label-cache-review.md#r2-thread-safety-and-manual-memory-management).
 - **Dynamic Type:** a `textStyle` font is resolved when it is assigned, and labels do not follow later category changes on their own, with or without this change. Assigning the font again picks up the new category, which changes `attributedText` and so re-measures.
 
 ## Compatibility
 
-There is no public API or behaviour change intended. Each label retains one attributed string until it is next measured or deallocated, including any HTML attachments it holds. A false cache hit would need an attribute object mutated in place. The SDK does not do this: paragraph styles are created fresh, `ATTRIBUTE_ATTACHMENT` is unsupported, and each `html` assignment creates new objects.
+There is no public API or behaviour change intended. Each label retains one attributed string until it is next measured or deallocated, including any HTML attachments it holds. A false cache hit needs a size change that `isEqual:` cannot see. One way is an attribute object mutated in place, which the SDK does not appear to do: paragraph styles are created fresh, `ATTRIBUTE_ATTACHMENT` is unsupported, and each `html` assignment creates new objects. The other is process-wide font state, which the comparison does not cover directly. On iOS 26.2 and 18.1 simulators, layout matched the unmodified build after runtime font registration, Bold Text, Dynamic Type and an in-process language write. Registration and the language write changed no existing measurement, so they did not challenge the cache. With Bold Text, `UILabel` replaced `attributedText` where its fonts changed, so the next layout measured again. In both builds, existing labels keep their old bounds until the next layout after Bold Text, and until the font is assigned again after Dynamic Type. This does not prove the same for every font or device. See [R1](./reviews/ios-label-cache-review.md#r1-cache-invalidation-and-external-font-state).
 
 Upstream `tidev/titanium-sdk` does not have this change, so it needs carrying when syncing with upstream.
 
@@ -71,6 +71,10 @@ On the simulators, `simctl ui content_size` changed the category while the app r
 
 `tests/Resources/ti.ui.label.test.js`, `auto-size measurement`, has five tests. A reused label must match a new label after each text, font, `textStyle`, style, attributed-text, HTML, padding and width change.
 
+These tests check rendering behaviour, so they pass with or without the cache. They poll until the reused and new labels agree on two reads in a row, with a 3 second limit, because `postlayout` does not fire when a size stays the same.
+
+`tests/native/ios/LabelMeasurementTests.m` checks the optimization itself. It counts `-[NSAttributedString size]` calls around `sizeForFont:`, so it fails if a sync drops the cache or weakens invalidation. Run it with `tests/native/ios/run.sh`, which needs XcodeGen. No CI workflow runs it.
+
 | Build | Label suite, iOS 26.2 simulator, `en-US` |
 |---|---|
 | Unmodified | 30 passed, 0 failed |
@@ -112,7 +116,7 @@ There has been no clean run on either build, so this can only rule out regressio
   - Every failure in the completed runs occurs on both builds. 30 of them are `pixelmatch is not a function`, so snapshot tests give no signal.
   - `TableView contentOffset` failed in one run per build.
 - **All test files, 3 runs per build:** 5 of 6 runs ended before the label suite, and none of the unmodified runs reached it, so these say little about labels. They had 24 to 26 failures, plus 57 in the one patched run that went further.
-- **GitHub:** the `Build` workflow passed on the first commit of this PR. `Check CLA` failed because the author is not authorized by the upstream CLA action. `tests-ios.yml` only runs after a review approval, so it has not run.
+- **GitHub:** the `Build` workflow compiles and packages the SDK but does not run this suite. `tests-ios.yml` runs it only after a review approval. Results for a given PR are on that PR.
 
 The repo's `build/lib/test/test.js` runs `killall Simulator`, which can disrupt other simulator work on a shared machine. The comparisons above used a separate runner on dedicated simulators.
 
@@ -154,5 +158,5 @@ Map loading is not attributed to the patch: label measurement is 0.1% of its sam
 - **13.4 backport:** FireCloud currently builds with 13.4.0, and this branch targets 14.0.0, so FireCloud does not get this optimization from it. Using it there needs a separate backport and its own validation.
 - FireCloud has not been measured on 14.0.0. Its build fails there in the Hyperloop 8.0.1 generator (`unknown encoding [MapView]`), which is a separate compatibility issue.
 - No Ad Hoc or App Store build has been measured, and benchmarks ran on only one device.
-- The GitHub iOS integration tests have not run, and the full suite has no clean run on either build.
-- Bold Text, fonts registered at runtime, Mac Catalyst and memory use were not exercised.
+- The full suite has no clean run on either build.
+- Mac Catalyst and physical devices were not exercised for external font state, and memory was only probed in a simulator without an app. The [review record](./reviews/ios-label-cache-review.md) lists what these checks covered.
