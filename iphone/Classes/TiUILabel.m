@@ -57,23 +57,16 @@
 - (CGSize)sizeForFont:(CGFloat)suggestedWidth
 {
   NSAttributedString *value = [label attributedText];
-  CGSize maxSize = CGSizeMake(suggestedWidth <= 0 ? 480 : suggestedWidth, 10000);
   CGSize shadowOffset = [label shadowOffset];
   requiresLayout = YES;
-  if ((suggestedWidth > 0) && [[label text] hasSuffix:@" "]) {
-    // (CGSize)sizeWithFont:(UIFont *)font constrainedToSize:(CGSize)size lineBreakMode:(UILineBreakMode)lineBreakMode method truncates
-    // the string having trailing spaces when given size parameter width is equal to the expected return width, so we adjust it here.
-    maxSize.width += 0.00001;
-  }
-  // -[NSAttributedString size] is unconstrained, so it depends only on the string and its attributes,
-  // but auto-size layout asks for it many times per pass. Only measure when those have changed.
+  // -[NSAttributedString size] takes no width, but auto-size layout asks for it many times per pass.
+  // Measure again only when the attributed text differs. Layout runs on the main thread.
   if (value != measuredText && ![value isEqual:measuredText]) {
     [measuredText release];
     measuredText = [value copy];
     measuredTextSize = [value size];
   }
-  CGSize returnVal = measuredTextSize;
-  CGSize size = CGSizeMake(ceilf(returnVal.width), ceilf(returnVal.height));
+  CGSize size = CGSizeMake(ceilf(measuredTextSize.width), ceilf(measuredTextSize.height));
   if (shadowOffset.width > 0) {
     // if we have a shadow and auto, we need to adjust to prevent
     // font from clipping
