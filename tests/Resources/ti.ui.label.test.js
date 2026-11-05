@@ -480,6 +480,87 @@ describe('Titanium.UI.Label', function () {
 			win.open();
 		});
 
+		it('tracks text style fonts', function (finish) {
+			this.slow(5000);
+			this.timeout(20000);
+
+			win = Ti.UI.createWindow({ layout: 'vertical' });
+			const properties = { text: 'Measured text', font: { textStyle: Ti.UI.TEXT_STYLE_BODY } };
+			const label = Ti.UI.createLabel(properties);
+			win.add(label);
+			win.addEventListener('open', function listener() {
+				win.removeEventListener('open', listener);
+
+				compareWithNewLabels(win, label, properties, [
+					[ 'same text style', { font: { textStyle: Ti.UI.TEXT_STYLE_BODY } } ],
+					[ 'large title', { font: { textStyle: Ti.UI.TEXT_STYLE_LARGE_TITLE } } ],
+					[ 'text under text style', { text: 'Measured text that is longer' } ],
+					[ 'caption', { font: { textStyle: Ti.UI.TEXT_STYLE_CAPTION2 } } ],
+					[ 'scaled family', { font: { textStyle: Ti.UI.TEXT_STYLE_BODY, fontFamily: 'Georgia', fontSize: 30 } } ],
+					[ 'other scaled family size', { font: { textStyle: Ti.UI.TEXT_STYLE_BODY, fontFamily: 'Georgia', fontSize: 12 } } ],
+					[ 'fixed size', { font: { fontSize: 40 } } ],
+					[ 'text style again', { font: { textStyle: Ti.UI.TEXT_STYLE_HEADLINE } } ],
+				]).then(finish, finish);
+			});
+			win.open();
+		});
+
+		it('tracks wrapped and padded text updates', function (finish) {
+			this.slow(5000);
+			this.timeout(20000);
+
+			const longText = 'Text that is long enough to wrap onto several lines inside of this narrow parent view';
+			win = Ti.UI.createWindow();
+			const host = Ti.UI.createView({ layout: 'vertical', width: 200, height: Ti.UI.SIZE, top: 0 });
+			const properties = { text: 'Short', font: { fontSize: 17 } };
+			const label = Ti.UI.createLabel(properties);
+			host.add(label);
+			win.add(host);
+			win.addEventListener('open', function listener() {
+				win.removeEventListener('open', listener);
+
+				compareWithNewLabels(host, label, properties, [
+					[ 'wrapped', { text: longText } ],
+					[ 'short again', { text: 'Short' } ],
+					[ 'padded', { padding: { left: 20, right: 30, top: 5, bottom: 15 } } ],
+					[ 'wrapped and padded', { text: longText } ],
+					[ 'other padding', { padding: { left: 4, right: 4, top: 20, bottom: 2 } } ],
+					[ 'wrapped with bigger font', { font: { fontSize: 28 } } ],
+					[ 'wrapped attributed text', { attributedString: attributed(longText, 22) }, [ 'text' ] ],
+					[ 'short attributed text', { attributedString: attributed('Short', 22) } ],
+					[ 'wrapped html', { html: `<b>Bold</b> ${longText}` }, [ 'attributedString' ] ],
+					[ 'short html', { html: '<b>Bold</b>' } ],
+				]).then(finish, finish);
+			});
+			win.open();
+		});
+
+		it('tracks attribute changes with the same string', function (finish) {
+			this.slow(5000);
+			this.timeout(20000);
+
+			const text = 'Same string';
+			win = Ti.UI.createWindow({ layout: 'vertical' });
+			const properties = { attributedString: attributed(text, 40) };
+			const label = Ti.UI.createLabel(properties);
+			win.add(label);
+			win.addEventListener('open', function listener() {
+				win.removeEventListener('open', listener);
+
+				compareWithNewLabels(win, label, properties, [
+					[ 'smaller attributed font', { attributedString: attributed(text, 14) } ],
+					[ 'attributed kerning', { attributedString: Ti.UI.createAttributedString({
+						text,
+						attributes: [ { type: Ti.UI.ATTRIBUTE_KERN, value: 20, range: [ 0, text.length ] } ]
+					}) } ],
+					[ 'no attributed kerning', { attributedString: attributed(text, 14) } ],
+					[ 'large html', { html: `<span style="font-size: 60px">${text}</span>` }, [ 'attributedString' ] ],
+					[ 'small html', { html: `<span style="font-size: 12px">${text}</span>` } ],
+				]).then(finish, finish);
+			});
+			win.open();
+		});
+
 		it('tracks available width changes', function (finish) {
 			this.slow(5000);
 			this.timeout(20000);
