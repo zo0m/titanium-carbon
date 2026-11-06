@@ -1,0 +1,50 @@
+name: LabelRegression
+options:
+  bundleIdPrefix: org.titanium.tests
+  deploymentTarget:
+    iOS: '17.0'
+projectReferences:
+  TitaniumKit:
+    path: ${TITANIUM_SDK_ROOT}/iphone/TitaniumKit/TitaniumKit.xcodeproj
+settings:
+  base:
+    CLANG_ENABLE_OBJC_ARC: NO
+    CODE_SIGNING_ALLOWED: NO
+    TARGETED_DEVICE_FAMILY: '1,2'
+targets:
+  LabelTestHost:
+    type: application
+    platform: iOS
+    sources: ["${TITANIUM_SDK_ROOT}/tests/native/ios/main.m"]
+    info:
+      path: ${LABEL_TEST_OUTPUT}/Host-Info.plist
+      properties:
+        UILaunchScreen: {}
+    dependencies:
+      - target: TitaniumKit/TitaniumKit
+  LabelTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - "${TITANIUM_SDK_ROOT}/tests/native/ios/LabelMeasurementTests.m"
+      - "${TITANIUM_SDK_ROOT}/iphone/Classes/TiUILabel.m"
+      - "${TITANIUM_SDK_ROOT}/iphone/Classes/TiUILabelProxy.m"
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        GCC_PREPROCESSOR_DEFINITIONS: ["$(inherited)", USE_TI_UILABEL=1]
+        HEADER_SEARCH_PATHS: ["$(inherited)", "${TITANIUM_SDK_ROOT}/iphone/Classes"]
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/LabelTestHost.app/LabelTestHost
+        BUNDLE_LOADER: $(TEST_HOST)
+    dependencies:
+      - target: LabelTestHost
+      - target: TitaniumKit/TitaniumKit
+      - sdk: CoreText.framework
+schemes:
+  LabelTests:
+    build:
+      targets:
+        LabelTestHost: all
+        LabelTests: [test]
+    test:
+      targets: [LabelTests]

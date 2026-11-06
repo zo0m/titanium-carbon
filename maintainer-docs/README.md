@@ -10,3 +10,5 @@ The documentation is as follows:
   * Describes the usage of GitHub actions for the CI setup
 * [Releasing the SDK](./releasing-the-sdk.md)
   * Describes the process of creating a release
+* [iOS label text measurement cache](./ios-label-text-measurement.md)
+  * Records the 13.4.0 backport of the label measurement cache and how it was validated
