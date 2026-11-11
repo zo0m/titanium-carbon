@@ -627,6 +627,43 @@ describe('Titanium.Blob', function () {
 			should(array[5]).eql(105); // ASCII decimal code for 'i'
 			should(array[6]).eql(115); // ASCII decimal code for 's'
 		});
+
+		it('returns empty ArrayBuffer for empty blob', () => {
+			const arrayBuffer = Ti.createBuffer({ value: '' }).toBlob().toArrayBuffer();
+			should(arrayBuffer).be.an.instanceOf(ArrayBuffer);
+			should(arrayBuffer.byteLength).eql(0);
+		});
+
+		it('returns exact length and every byte value', () => {
+			const arrayBuffer = byteRangeBlob().toArrayBuffer();
+			should(arrayBuffer).be.an.instanceOf(ArrayBuffer);
+			shouldHoldByteRange(arrayBuffer);
+		});
+
+		it('returns a new independent copy on repeated calls', () => {
+			const blob = byteRangeBlob();
+			const first = blob.toArrayBuffer();
+			new Uint8Array(first).fill(0);
+			for (let i = 0; i < 20; i++) {
+				const next = blob.toArrayBuffer();
+				should(next).not.equal(first);
+				shouldHoldByteRange(next);
+			}
+		});
+
+		it('keeps contents after blob is released', finish => {
+			let blob = byteRangeBlob();
+			const arrayBuffer = blob.toArrayBuffer();
+			blob = null;
+			setTimeout(() => {
+				try {
+					shouldHoldByteRange(arrayBuffer);
+				} catch (err) {
+					return finish(err);
+				}
+				finish();
+			}, 100);
+		});
 	});
 
 	describe('#arrayBuffer()', () => {
@@ -655,5 +692,56 @@ describe('Titanium.Blob', function () {
 				finish();
 			}).catch(err => finish(err));
 		});
+
+		it('resolves to empty ArrayBuffer for empty blob', () => {
+			return Ti.createBuffer({ value: '' }).toBlob().arrayBuffer().then(arrayBuffer => {
+				should(arrayBuffer).be.an.instanceOf(ArrayBuffer);
+				should(arrayBuffer.byteLength).eql(0);
+			});
+		});
+
+		it('resolves with exact length and every byte value', () => {
+			return byteRangeBlob().arrayBuffer().then(arrayBuffer => {
+				should(arrayBuffer).be.an.instanceOf(ArrayBuffer);
+				shouldHoldByteRange(arrayBuffer);
+			});
+		});
+
+		it('resolves independent copies for repeated calls', () => {
+			const blob = byteRangeBlob();
+			const promises = [];
+			for (let i = 0; i < 20; i++) {
+				promises.push(blob.arrayBuffer());
+			}
+			return Promise.all(promises).then(arrayBuffers => {
+				should(new Set(arrayBuffers).size).eql(arrayBuffers.length);
+				new Uint8Array(arrayBuffers[0]).fill(0);
+				arrayBuffers.slice(1).forEach(shouldHoldByteRange);
+			});
+		});
+
+		it('resolves after blob is released', () => {
+			let blob = byteRangeBlob();
+			const promise = blob.arrayBuffer();
+			blob = null;
+			return promise.then(shouldHoldByteRange);
+		});
 	});
+
+	// Blob holding bytes 0..255, so every byte value is checked.
+	function byteRangeBlob() {
+		const buffer = Ti.createBuffer({ length: 256 });
+		for (let i = 0; i < 256; i++) {
+			buffer[i] = i;
+		}
+		return buffer.toBlob();
+	}
+
+	function shouldHoldByteRange(arrayBuffer) {
+		should(arrayBuffer.byteLength).eql(256);
+		const array = new Uint8Array(arrayBuffer);
+		for (let i = 0; i < 256; i++) {
+			should(array[i]).eql(i);
+		}
+	}
 });
