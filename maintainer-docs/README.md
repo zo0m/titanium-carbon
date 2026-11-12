@@ -14,3 +14,5 @@ The documentation is as follows:
   * Records why labels cache text measurement, how it is invalidated and how it was validated
 * [iOS label cache review](./reviews/ios-label-cache-review.md)
   * Records the investigation of each code review finding on that cache
+* [Upstream sync, 2026-11-11](./upstream-sync-2026-11-11.md)
+  * Records the merge of upstream `main` into the fork, its validation and FireCloud compatibility
