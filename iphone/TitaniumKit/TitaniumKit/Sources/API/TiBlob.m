@@ -471,19 +471,38 @@ static void jsArrayBufferFreeDeallocator(void *data, void *ctx)
   free(data);
 }
 
+// Returns a new ArrayBuffer that owns a copy of the bytes in data, or nil with *error set.
+static JSValue *TiBlobMakeArrayBuffer(NSData *data, JSContext *context, JSValue **error)
+{
+  NSUInteger len = [data length];
+  void *arrayBytes = malloc(len);
+  if (arrayBytes == NULL && len > 0) {
+    *error = [JSValue valueWithNewErrorFromMessage:[NSString stringWithFormat:@"Unable to allocate %lu bytes for ArrayBuffer", (unsigned long)len] inContext:context];
+    return nil;
+  }
+  [data getBytes:arrayBytes length:len];
+
+  // JSC attaches the deallocator to the ArrayBuffer before reporting any exception,
+  // so it owns arrayBytes from here on, even on failure: never free them here.
+  JSValueRef exception = NULL;
+  JSObjectRef arrayBuffer = JSObjectMakeArrayBufferWithBytesNoCopy(context.JSGlobalContextRef, arrayBytes, len, jsArrayBufferFreeDeallocator, NULL, &exception);
+  if (arrayBuffer == NULL) {
+    *error = exception != NULL ? [JSValue valueWithJSValueRef:exception inContext:context] : [JSValue valueWithNewErrorFromMessage:@"Unable to create ArrayBuffer" inContext:context];
+    return nil;
+  }
+  return [JSValue valueWithJSValueRef:arrayBuffer inContext:context];
+}
+
 - (JSValue *)toArrayBuffer
 {
-  NSData *theData = [self data];
-  // Copy the raw bytes of the NSData we're wrapping
-  NSUInteger len = [theData length];
-  void *arrayBytes = malloc(len);
-  [theData getBytes:arrayBytes length:len];
-
-  // Now make an ArrayBuffer with the copied bytes
   JSContext *context = JSContext.currentContext;
-  JSValueRef *exception;
-  JSObjectRef arrayBuffer = JSObjectMakeArrayBufferWithBytesNoCopy(context.JSGlobalContextRef, arrayBytes, len, jsArrayBufferFreeDeallocator, nil, exception);
-  return [JSValue valueWithJSValueRef:arrayBuffer inContext:context];
+  JSValue *error = nil;
+  JSValue *arrayBuffer = TiBlobMakeArrayBuffer([self data], context, &error);
+  if (arrayBuffer == nil) {
+    [context setException:error];
+    return nil;
+  }
+  return arrayBuffer;
 }
 
 - (JSValue *)arrayBuffer
@@ -492,20 +511,12 @@ static void jsArrayBufferFreeDeallocator(void *data, void *ctx)
   KrollPromise *promise = [[[KrollPromise alloc] initInContext:context] autorelease];
   TiThreadPerformOnMainThread(
       ^{
-        NSData *theData = [self data];
-        // Copy the raw bytes of the NSData we're wrapping
-        NSUInteger len = [theData length];
-        void *arrayBytes = malloc(len);
-        [theData getBytes:arrayBytes length:len];
-
-        // Now make an ArrayBuffer with the copied bytes
-        JSValueRef *exception;
-        JSObjectRef arrayBuffer = JSObjectMakeArrayBufferWithBytesNoCopy(context.JSGlobalContextRef, arrayBytes, len, jsArrayBufferFreeDeallocator, nil, exception);
-        if (exception) {
-          [promise reject:@[ [JSValue valueWithJSValueRef:exception inContext:context] ]];
+        JSValue *error = nil;
+        JSValue *arrayBuffer = TiBlobMakeArrayBuffer([self data], context, &error);
+        if (arrayBuffer == nil) {
+          [promise reject:@[ error ]];
         } else {
-          JSValue *buffer = [JSValue valueWithJSValueRef:arrayBuffer inContext:context];
-          [promise resolve:@[ buffer ]];
+          [promise resolve:@[ arrayBuffer ]];
         }
       },
       NO);
