@@ -1,17 +1,23 @@
 # Upstream sync, 2026-11-11
 
-Merges `tidev/titanium-sdk` `main` into the fork's `master` line on branch `integration/upstream-sync`. Not pushed, not merged into `master`. The 13.4 maintenance branches are untouched.
+Merges `tidev/titanium-sdk` `main` into the fork's `master` line on branch `integration/upstream-sync`, together with the fork fixes merged into `master` since (PRs #3 and #5) and the CocoaPods clean-build fix. The 13.4 maintenance branches are untouched.
+
+The branch keeps upstream's history. Merge it into `master` with a merge commit; a squash or rebase would drop upstream ancestry and make the next sync re-merge these commits.
 
 ## Revisions
 
 | | Commit |
 |---|---|
-| Fork base (`origin/master`) | `fac879d4f5a1e0ff170cbbedd054afad0aaf96a3` |
+| Fork base (`origin/master` at the first merge) | `fac879d4f5a1e0ff170cbbedd054afad0aaf96a3` |
 | Upstream (`upstream/main`, `tidev/titanium-sdk`, default branch `main`) | `d0e238f17eda3c3605f20d3eb9b5099c772a3fc1` (14.1.0) |
 | Merge base | `b0027631bbbf62c2dc9537eb32916ee3a67883dc` |
 | Merge commit | `93de1e9d566af42d1a96d0a1d94f390f71c44108` |
+| Fork `origin/master` at the second merge | `5cff688b3acf7321457f1fc5cb3c88f4cbfcecbb` (PR #3 `0080812728`, PR #5 `5b8d3e6edf`) |
+| Merge of fork `master` | `02687c6ea428b56327e433f302f12a959f421a93` |
+| CocoaPods clean-build fix | `6c773886ab11764af56fdbff11b0e4371290b61d` (branch `fix/ios-hyperloop-pods-clean`) |
+| Merge of the fix | `56ec137e42d4b5566f86c1b247313e8a55f96153` |
 
-The fork was 1 commit ahead and 20 behind. Local `master` had no unpublished commits; it was 1 behind `origin/master`.
+At the first merge the fork was 1 commit ahead and 20 behind, and local `master` had no unpublished commits. Fork `master` then gained PRs #3 and #5. At the second merge local `master` equalled `origin/master`, again with no unpublished commits.
 
 ## Incoming changes
 
@@ -30,7 +36,10 @@ The fork was 1 commit ahead and 20 behind. Local `master` had no unpublished com
 
 ## Conflicts
 
-None. The fork's paths and upstream's paths do not overlap. The independent review checked the tree mechanically: `git diff fac879d4f5 93de1e9d56` equals `git diff b0027631bb d0e238f17e`, and `git diff d0e238f17e 93de1e9d56` equals `git diff b0027631bb fac879d4f5`.
+None in either merge.
+
+- **Upstream merge:** the fork's paths and upstream's paths do not overlap. The independent review checked the tree mechanically: `git diff fac879d4f5 93de1e9d56` equals `git diff b0027631bb d0e238f17e`, and `git diff d0e238f17e 93de1e9d56` equals `git diff b0027631bb fac879d4f5`.
+- **Fork `master` merge:** PRs #3 and #5 change `iphone/Classes/TiUITableView.m`, `iphone/TitaniumKit/TitaniumKit/Sources/API/TiBlob.m` and `tests/Resources/ti.blob.test.js`. Upstream does not touch any of them (`git diff b0027631bb d0e238f17e` is empty for these paths). After the merge all three files, and `TiUILabel.{h,m}`, are identical to `origin/master`.
 
 ## Fork patches
 
@@ -38,11 +47,13 @@ None. The fork's paths and upstream's paths do not overlap. The independent revi
 |---|---|
 | `fac879d4f5` TiUILabel measurement cache | Preserved unchanged. Upstream has no equivalent and no second cache. |
 | TiViewProxy queue lifetime | Already on the merge base through upstream `32df010365`: the queues are released in `dealloc`, after a final `_destroy`. The 13.4 backport (`titanium-carbon-134-view-queue-lifetime`, uncommitted) is separate and not part of this merge. |
-| TiBlob ArrayBuffer exception out-param (`c2f6359f57`, 13.4 only) | Not imported. The defect remains upstream and here; see below. |
+| TiUITableView header and footer proxy retention (PR #3, `0080812728`) | Merged from fork `master`, unchanged. |
+| TiBlob ArrayBuffer exception out-param and allocation check (PR #5, `5b8d3e6edf`) | Merged from fork `master`, unchanged, with its tests. The defect remains upstream. |
+| CocoaPods clean-build fix (`6c773886ab`) | Added here. See [ios-hyperloop-cocoapods-clean.md](./ios-hyperloop-cocoapods-clean.md). |
 
 ## Known remaining defects
 
-- **TiBlob ArrayBuffer:** `TiBlob.m:484` (`toArrayBuffer`) and `:502` (`arrayBuffer`) pass an uninitialized `JSValueRef *` to `JSObjectMakeArrayBufferWithBytesNoCopy`. Unchanged upstream. The fix exists only on `fix/13.4-blob-arraybuffer`. The iOS suite does not cover it: `tests/Resources/app.js` loads `ti.blob.test` on Android only.
+- **Blob tests on iOS:** `tests/Resources/app.js` still loads `ti.blob.test` on Android only, so the normal iOS suite does not run the ArrayBuffer tests from PR #5. They were run on iOS separately (see Checks).
 - **TiViewProxy guard comments:** the new `childrenQueue == NULL` guards (`TiViewProxy.m:71`, `:362`) say the queue is released in `_destroy`. On this tree it is released in `dealloc`. The guards are harmless and the comments are wrong; left as upstream wrote them.
 - **`TiAnimation` interrupted animations** (`TiAnimation.m:300`): intended upstream behaviour, but it changes what JS reads back after an interrupted animation. Apps that read `opacity`, `top` and similar after a cut-short animation should be checked.
 - **`Ti.UI.Matrix2D.apiName`** returns `Ti.UI.2DMatrix`. The test fails on upstream and on the fork base too.
@@ -65,9 +76,17 @@ Artifact: `manifest.json` reports `name 14.1.0.USYNC`, `version 14.1.0`, `githas
 
 Baseline SDKs, built the same way from detached worktrees: `14.1.0.USYNCUP` (upstream `d0e238f17e`) and `14.0.0.USYNCFORK` (fork base `fac879d4f5`).
 
+The final tree was built the same way as `14.1.0.FORKSYNC`, with a clean worktree. Its `manifest.json` reports `name 14.1.0.FORKSYNC`, `version 14.1.0`, `githash 4e439ba95b`. That commit was later recreated as `56ec137e42` so the published history would not carry local paths and private app details; outside `maintainer-docs/` the two trees are identical. Checked in the artifact:
+
+- `iphone/Classes/TiUITableView.m`, `TiUILabel.m` and `iphone/cli/commands/_build.js` are identical to the tree, and `_build.js` has no `cleanXcodeDerivedData`.
+- `TiBlob.m` was recompiled. Every `TitaniumKit.xcframework` slice contains the PR #5 error string, which `14.1.0.USYNC` lacks.
+- The kernel `common/Resources/ios/ti.kernel.js` is byte-identical to `14.1.0.USYNC`.
+
 SDK 14 needs Titanium CLI 9.1.0 or newer. The global CLI is 7.1.5 and refuses to build. Everything here used the repository's `node_modules/.bin/titanium` (9.1.0).
 
 ## Checks
+
+The first table covers `14.1.0.USYNC` (the upstream merge alone). The final tree has its own table below; it reruns the checks the later changes could affect.
 
 | Check | Result |
 |---|---|
@@ -85,13 +104,42 @@ SDK 14 needs Titanium CLI 9.1.0 or newer. The global CLI is 7.1.5 and refuses to
 | `ti.ui.label.test` only, 3 runs | 29 passed, 2 pending, 1 failed (`.textid`, locale) in each run |
 | `ti.geolocation.test` only, 2 runs each on `14.1.0.USYNC` and `14.0.0.USYNCFORK` | 75 started: 73 passed, 1 pending, 2 failed (`getCurrentPosition`, `kCLErrorDomain error 0`), identical on both |
 
+### Final tree (`14.1.0.FORKSYNC`)
+
+The full iOS JS suite was not rerun. The later changes are TableView, TiBlob, the build CLI and docs, so the focused suites below cover them, and the full-suite evidence above stands for everything else.
+
+| Check | Result |
+|---|---|
+| `npm run lint:js`, `lint:objc`, `lint:docs` | Pass (warnings only; the one `_build.js` warning, unused `once`, predates this work) |
+| CLI tests (`cli/tests`, `iphone/cli/tests`, `android/cli/tests`, `build/lib/test`) | 85 passing |
+| commitlint on every new commit | Pass |
+| `tests/native/ios/run.sh`, iPhone 17 / iOS 26.2 | 21 executed, 21 passed (2 `LabelMeasurementTests`, 19 `SceneTests`), from the result bundle |
+| `ti.blob.test` on iOS, guard removed in the generated app | 81 results: 80 passed, 1 pending, 0 failed, completed with the stop marker. All 12 `toArrayBuffer()`/`arrayBuffer()` tests ran and passed |
+| Same on `14.1.0.USYNC` (without PR #5) | App exits after 75 passed, no stop marker: the defect the tests catch |
+| `ti.ui.tableview.test`, 2 runs, and 2 more with `NSZombieEnabled` | 47 started per run: 40 or 41 passed, 7 pending, 6 or 7 failed. The 6 are `pixelmatch is not a function`. The 7th is `contentOffset` (88 instead of 150), in 3 of 4 runs. No zombie message, no crash |
+| Same on `14.1.0.USYNC` (without PR #3), 3 runs | `contentOffset` fails in all 3, and `.searchText` once. A baseline failure, not caused by PR #3. The test uses no header or footer view |
+| `ti.ui.label.test`, 2 runs | 29 passed, 2 pending, 1 failed (`.textid`, locale), as before |
+| CocoaPods reproducer (`zo0m.test.hlpods`), forced clean simulator build | Pod products kept, both classes in the metabase, no `xcodebuild clean`. Runs: `objc=objc-hello-ti swift=5` |
+| Reproducer, incremental build | Build directory reused. Runs with the same result |
+| Reproducer, pod source changed, then a forced clean build | Runs the changed implementation (`objc=objc-changed-ti`) |
+| Reproducer, device target (test deploy type), build only, development profile | Pod products kept, both classes in the iphoneos metabase |
+| Production deploy type (`dist-adhoc`, `dist-appstore`) | Not built: no distribution certificate on this machine. Covered by the code path, which no longer differs by deploy type, and by the resolved clean locations in the fix record |
+| FireCloud, forced clean simulator build | See FireCloud compatibility |
+
+Two Hyperloop 8.0.2 cache defects showed up in the reproducer:
+
+- After an earlier failed build, `build/hyperloop/ios/symbol_references.json` lacked the pod classes. The next build logged "Symbol references up-to-date" and skipped binding generation, so the app failed with `Requested module not found: ZTObjC/ZTGreeter`. `ti clean -p ios` does not remove `build/hyperloop`; `ti clean` does, and the rebuilt app ran.
+- A clean device build right after a simulator build reused the cached `metabase-cocoapods-*.json`. That file pointed at `Debug-iphonesimulator` headers, which the clean build had removed, so the iphoneos metabase had no pod classes. From a `ti clean` state the device metabase is complete. The step that deleted the headers is `initBuildDir()`, so the removed Xcode clean was not involved.
+
 ### How the JS suite was run
 
 `npm run test:iphone` (`build/lib/test/test.js`) runs `killall Simulator`, which quits the Simulator app other sessions use, and then waits for the CLI to launch the simulator. With the Simulator app already open on another session's device, that launch never finished. So the repository runner generated and built the test app (with a no-op `killall` on `PATH`). A separate script then installed the app on a dedicated simulator, launched it, and read the app's own log file (`Documents/<guid>.log`, written because simulator builds set `LOGTOFILE`). Counts come from that file's `!TEST_START`/`!TEST_END` lines and the `!TEST_RESULTS_STOP!` marker.
 
 Mocha stops the whole run when an uncaught assertion fails asynchronously. It then still prints the stop marker, so the marker alone does not prove a full run. `ti.ui.ios.splitwindow.test` produced the first such failure, so the comparison runs exclude that file in the generated project. Clipboard tests also leak uncaught failures into later tests, including the label auto-size tests. The label-only runs show those tests pass on their own.
 
-The iOS suite does not run `ti.blob.test` or `ti.media.videoplayer.test`: `app.js` loads them on Android only. No Blob or VideoPlayer test was executed on iOS.
+The iOS suite does not run `ti.blob.test` or `ti.media.videoplayer.test`: `app.js` loads them on Android only. In the full-suite runs above, no Blob or VideoPlayer test was executed on iOS.
+
+The focused runs on the final tree use the same generated project. A script comments out every other test module in its `app.js`, removes the `OS_ANDROID` guard around `ti.blob.test`, and sets the app id to `zo0m.test.forksync.mocha`.
 
 ### Failure attribution
 
@@ -124,17 +172,23 @@ Local-only changes in that worktree:
 | `gulp buildComponents`, `pod install` | Pass. 15 pods |
 | JS compile, Alloy, native JSON generation | Pass. The generated `ti.kernel.js` ends with the SDK kernel bytes unchanged (SHA-256 matches). `0-native-json.bootstrap.js` generated |
 | Hyperloop CocoaPods build | `BUILD SUCCEEDED` |
-| Hyperloop custom class generation | **Fails:** `unknown encoding [MapView] start at index 0` (`hooks/generate/custom.js:221`), exit 13 |
-| Startup, form, map smoke test | Not possible: no app was built |
+| Hyperloop custom class generation | **Failed on `14.1.0.USYNC`:** `unknown encoding [MapView] start at index 0` (`hooks/generate/custom.js:221`), exit 13 |
 
-The Hyperloop failure is the historical one, and it is not caused by this sync:
+The cause was the SDK's forced `xcodebuild clean` deleting the pods Hyperloop had just built. It affects every 14.x SDK, including clean upstream; see [ios-hyperloop-cocoapods-clean.md](./ios-hyperloop-cocoapods-clean.md).
 
-- 8.0.1 and 8.0.2 have identical hooks, and FireCloud on 13.4 also builds with 8.0.1.
-- On 13.4, `MapView` comes from `MapboxMaps-Swift.h` in the main metabase. On 14.1 the main metabase (`metabase-16.0-…json`) has no class from any pod: 0 from MapboxMaps, GCDWebServer and the app's three local Swift pods, against 4, 15 and 30 on 13.4.
-- The generated metabase header imports the same headers on both, and Hyperloop logged parsing `MapboxMaps-Swift.h` from the built pod framework.
-- Root cause not established. The next step is to run the metabase generator by hand on `metabase-16.0-…h` with the same flags and read the clang diagnostics, then compare with 13.4.
+With `14.1.0.FORKSYNC`, in the same worktree (local `14.1.0.FORKSYNC` allowlist entry for the identical kernel, `tiapp.xml` switched there only):
 
-## Independent review
+| Step | Result |
+|---|---|
+| `npm run test:native-json` | 23 passed |
+| Forced clean simulator build | Pass. The metabase has MapboxMaps 4, GCDWebServer 15 and 30 classes from the app's three local Swift pods, including `MapView`, the same as 13.4. Native JSON kernel override generated from `14.1.0.FORKSYNC` |
+| Startup on the dedicated iPad simulator | Reaches the login screen, no `[ERROR]` lines. `[native-json]` reports `stringifyIsCaptured: true, parseIsCaptured: true`. The app's data container was kept from an earlier install, so this was not a fresh-install start |
+| Signed-in inspection form and map | Not tested: no signed-in session with synthetic data |
+| Physical device | Not tested |
+
+A fresh install on `14.1.0.HLFIX` logged errors from a FireCloud database migration. This is FireCloud code, independent of the SDK.
+
+## Independent review of the upstream merge
 
 A separate reviewer read the merge without being given these conclusions.
 
@@ -150,13 +204,27 @@ A separate reviewer read the merge without being given these conclusions.
 - **Info:** `kTiFrameAdjustNotification` is no longer posted anywhere.
 - **Confirmed correct:** the KrollTimerManager, KrollContext, TiUIWindowProxy and TiUIView changes. No interaction with the label cache.
 
+## Independent review of the final tree
+
+A fresh reviewer read the combined diff against fork `master` and both later merges. No blockers.
+
+- **Merges:** each merge commit equals its clean automatic merge, recomputed with `git merge-tree --write-tree`. Against the ideal merge of `5cff688b3a` and `d0e238f17e`, HEAD differs only in `iphone/cli/commands/_build.js` (the fix) and `maintainer-docs/`. No fork file is lost or altered.
+- **Interactions:** upstream does not touch iOS `TiBlob`, `TiUITableView` or label measurement. Its `TiViewProxy` `childrenQueue == NULL` guards and the `KrollContext` private-pointer detach make PR #3's longer-lived header and footer proxies safer during teardown. Neither makes a fork fix redundant.
+- **Fix:** correct for all targets. The removed step's only side effect, recreating `xcodeAppDir`, is already done by `initBuildDir()`.
+- **Hygiene:** no build artifacts, credentials or experiments. Commit messages are conventional.
+- **Should-fix, applied:** the fork is public, so the records no longer carry local machine paths, FireCloud's private pod names or its internal source references.
+- **Nits:**
+  - The fix commit cites `#13032`, which is upstream `tidev/titanium-sdk#13032`, not a fork PR.
+  - The comment above `initBuildDir()` describes a step that no longer exists. It is kept on purpose, as a guard against adding the step back.
+
 ## Status
 
-- **SDK integration:** ready for a fork PR on iOS evidence. Android is unbuilt and untested here.
-- **FireCloud on 14.1:** not ready. Its build stops in Hyperloop generation. Before changing FireCloud's SDK:
-  - Find and fix why the 14.x Hyperloop metabase drops all CocoaPods classes.
-  - Install Titanium CLI 9.1.0 or newer for FireCloud builds.
-  - Vendor or pin `ti.map` and `ti.identity`, since the SDK no longer ships them.
-  - Confirm that the iOS 16.0 minimum is acceptable (FireCloud documents 15.6).
-  - Review the kernel hash and run the native JSON workaround's device checks.
-  - Smoke-test startup, an inspection form and a map on a device.
+- **SDK integration:** iOS validated as listed above. Android is unbuilt and untested here: there is no Android SDK on this machine. `lint:swift` was not run: `swiftlint` is not installed.
+- **FireCloud on 14.1:** builds and starts with this SDK. Switching FireCloud's SDK is a separate change that still needs:
+  - Titanium CLI 9.1.0 or newer for FireCloud builds.
+  - `ti.map` and `ti.identity` vendored or pinned, since the SDK no longer ships them.
+  - Acceptance of the iOS 16.0 minimum (FireCloud documents 15.6).
+  - A reviewed kernel hash in source, and the native JSON workaround's device checks.
+  - Signed-in smoke tests of inspection forms and maps, on simulator and device.
+  - A fix for the fresh-install database migration.
+- **Hyperloop (separate repository):** it discards the metabase generator's stderr, and the generator exits 0 after a fatal parse error. Its cache also has the two defects described under Checks.
