@@ -2693,6 +2693,11 @@ class iOSBuilder extends Builder {
 			await this.loginfo(); // spits out fields to CLI
 			await this.readBuildManifest(); // sets this.previousBuildManifest and needs to be run before checkIfNeedToRecompile
 			await this.checkIfNeedToRecompile(); // compares various properties/fields versus last build
+			// A clean build is done by emptying the build dir here. The Xcode build's locations
+			// (-derivedDataPath, OBJROOT, SHARED_PRECOMPS_DIR, SYMROOT) are all inside it, so no
+			// `xcodebuild clean` is needed, and one would resolve Xcode's own build location instead:
+			// either a directory this build never uses, or one that is SYMROOT on a case-insensitive
+			// volume, where it deletes what build.pre.compile plugins such as Hyperloop wrote.
 			await this.initBuildDir(); // wipe or re-create build dir
 
 			// Notify plugins that we're prepping to compile.
@@ -2727,14 +2732,6 @@ class iOSBuilder extends Builder {
 			this.copyTitaniumiOSFiles();
 			await new Promise((resolve, reject) => {
 				this.copyExtensionFiles(e => {
-					if (e) {
-						return reject(e);
-					}
-					resolve();
-				});
-			});
-			await new Promise((resolve, reject) => {
-				this.cleanXcodeDerivedData(e => {
 					if (e) {
 						return reject(e);
 					}
@@ -4298,6 +4295,29 @@ class iOSBuilder extends Builder {
 					}
 				}, this);
 			}, this);
+
+			// Xcode 27.2+ refuses to open a project in which a file reference is a member of more
+			// than one group. The extension "Resources" and "Frameworks" children were pushed into
+			// the app's groups above and are copied again as part of the extension's own group
+			// tree, so drop every reference from the app's groups that already lives elsewhere.
+			const groupedRefs = new Set();
+			Object.keys(xobjs.PBXGroup).forEach(function (key) {
+				const group = xobjs.PBXGroup[key];
+				if (!group || typeof group !== 'object' || !Array.isArray(group.children) || group === resourcesGroup || group === frameworksGroup) {
+					return;
+				}
+				group.children.forEach(child => groupedRefs.add(child.value));
+			});
+			[ resourcesGroup, frameworksGroup ].forEach(function (group) {
+				const seen = new Set();
+				group.children = group.children.filter(function (child) {
+					if (groupedRefs.has(child.value) || seen.has(child.value)) {
+						return false;
+					}
+					seen.add(child.value);
+					return true;
+				});
+			});
 		} else {
 			this.logger.trace('No extensions to add');
 		}
@@ -5416,96 +5436,6 @@ class iOSBuilder extends Builder {
 				this._embedCapabilitiesAndWriteEntitlementsPlist(plist, extension.targetInfo[target].entitlementsFile, true, next);
 			}.bind(this), next);
 		}.bind(this), next);
-	}
-
-	cleanXcodeDerivedData(next) {
-		if (!this.forceCleanBuild) {
-			return next();
-		}
-
-		const exe = this.xcodeEnv.executables.xcodebuild,
-			args = [ 'clean', '-UseNewBuildSystem=' + (this.useNewBuildSystem ? 'YES' : 'NO'), '-scheme', this.sanitizedAppName() ];
-		let tries = 0,
-			lastErr = null,
-			done = false;
-
-		if (this.simHandle && this.target !== 'macos' && this.target !== 'dist-macappstore') {
-			args.push('-destination', 'generic/platform=iOS Simulator');
-		} else if (this.target === 'device' || this.target === 'dist-adhoc' || this.target === 'dist-appstore') {
-			args.push('-destination', 'generic/platform=iOS');
-		} else if (this.target === 'macos' || this.target === 'dist-macappstore') {
-			args.push('-destination', 'generic/platform=macOS');
-		}
-
-		this.logger.info('Cleaning Xcode derived data');
-		this.logger.debug(`Invoking: ${('DEVELOPER_DIR=' + this.xcodeEnv.path + ' ' + exe + ' ' + args.join(' ')).cyan}`);
-
-		// If going back and forth between compiling with different iOS SDKs that
-		// are tied to different Xcode versions, then it's possible for the
-		// CoreSimulator service to panic and cause a "INTERNAL ERROR: Uncaught
-		// exception". To fix it, we simply retry up to 3 times. If we detect a
-		// failure, we wait 500ms between tries. Super hacky, but seems to work.
-		async.whilst(
-			function (cb) {
-				return cb(null, tries++ < 3 && !done);
-			},
-
-			function (cb) {
-				const child = spawn(exe, args, {
-					cwd: this.buildDir,
-					env: {
-						DEVELOPER_DIR: this.xcodeEnv.path,
-						TMPDIR: process.env.TMPDIR,
-						HOME: process.env.HOME,
-						PATH: process.env.PATH
-					}
-				});
-
-				let out = '';
-				child.stdout.on('data', function (data) {
-					out += data.toString();
-				});
-				child.stderr.on('data', function (data) {
-					out += data.toString();
-				});
-
-				child.on('close', function (code) {
-					if (code === 65) {
-						lastErr = out;
-						done = true;
-						cb();
-					} else if (code) {
-						this.logger.debug(`Retrying to clean project (code ${code})`);
-						lastErr = out;
-						setTimeout(cb, 500);
-					} else if (out.indexOf('INTERNAL ERROR') !== -1) {
-						this.logger.debug('Retrying to clean project');
-						lastErr = out;
-						setTimeout(cb, 500);
-					} else {
-						done = true;
-						lastErr = null;
-						fs.ensureDirSync(this.xcodeAppDir);
-						out.split('\n').forEach(function (line) {
-							line = line.trim();
-							line && this.logger.trace(line);
-						}, this);
-						cb();
-					}
-				}.bind(this));
-			}.bind(this),
-
-			function () {
-				if (lastErr) {
-					lastErr.split('\n').forEach(function (line) {
-						line = line.trim();
-						line && this.logger.error(line);
-					}, this);
-					process.exit(1);
-				}
-				next();
-			}.bind(this)
-		);
 	}
 
 	writeDebugProfilePlists() {
